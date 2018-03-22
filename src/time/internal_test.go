@@ -4,13 +4,15 @@
 
 package time
 
+import "runtime"
+
 func init() {
 	// force US/Pacific for time zone tests
 	ForceUSPacificForTesting()
 }
 
 func initTestingZone() {
-	z, err := loadLocation("America/Los_Angeles", zoneSources[len(zoneSources)-1:])
+	z, err := loadLocation("America/Los_Angeles", zoneSources)
 	if err != nil {
 		panic("cannot load America/Los_Angeles for testing: " + err.Error())
 	}
@@ -21,8 +23,9 @@ func initTestingZone() {
 var OrigZoneSources = zoneSources
 
 func forceZipFileForTesting(zipOnly bool) {
-	zoneSources = make([]string, len(OrigZoneSources))
+	zoneSources = make([]string, len(OrigZoneSources)+1)
 	copy(zoneSources, OrigZoneSources)
+	zoneSources = append(zoneSources, runtime.GOROOT()+"/lib/time/zoneinfo.zip")
 	if zipOnly {
 		zoneSources = zoneSources[len(zoneSources)-1:]
 	}

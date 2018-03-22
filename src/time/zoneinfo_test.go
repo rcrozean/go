@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -139,7 +140,7 @@ func TestLoadLocationFromTZData(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tzinfo, err := time.LoadTzinfo(locationName, time.OrigZoneSources[len(time.OrigZoneSources)-1])
+	tzinfo, err := time.LoadTzinfo(locationName, runtime.GOROOT()+"/lib/time/zoneinfo.zip")
 	if err != nil {
 		t.Fatal(err)
 	}

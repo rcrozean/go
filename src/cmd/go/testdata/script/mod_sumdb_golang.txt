@@ -2,12 +2,12 @@
 env GOPROXY=
 env GOSUMDB=
 go env GOPROXY
-stdout '^https://proxy.golang.org,direct$'
+stdout '^direct$'
 go env GOSUMDB
-stdout '^sum.golang.org$'
+stdout '^off$'
 env GOPROXY=https://proxy.golang.org
 go env GOSUMDB
-stdout '^sum.golang.org$'
+stdout '^off$'
 
 # Download direct from github.
 [!net] skip

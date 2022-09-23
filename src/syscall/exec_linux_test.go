@@ -50,6 +50,12 @@ func skipInContainer(t *testing.T) {
 	}
 }
 
+func skipPrivilegedTests(t *testing.T) {
+	if os.Getenv("SKIP_PRIVILEGED_TESTS") == "true" {
+		t.Skip("skipping this privileged test")
+	}
+}
+
 func skipNoUserNamespaces(t *testing.T) {
 	if _, err := os.Stat("/proc/self/ns/user"); err != nil {
 		if os.IsNotExist(err) {
@@ -344,6 +350,7 @@ func TestUnshareMountNameSpaceHelper(*testing.T) {
 // Test for Issue 38471: unshare fails because systemd has forced / to be shared
 func TestUnshareMountNameSpace(t *testing.T) {
 	skipInContainer(t)
+	skipPrivilegedTests(t)
 	// Make sure we are running as root so we have permissions to use unshare
 	// and create a network namespace.
 	if os.Getuid() != 0 {
@@ -386,6 +393,7 @@ func TestUnshareMountNameSpace(t *testing.T) {
 // Test for Issue 20103: unshare fails when chroot is used
 func TestUnshareMountNameSpaceChroot(t *testing.T) {
 	skipInContainer(t)
+	skipPrivilegedTests(t)
 	// Make sure we are running as root so we have permissions to use unshare
 	// and create a network namespace.
 	if os.Getuid() != 0 {

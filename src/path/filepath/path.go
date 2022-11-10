@@ -15,7 +15,6 @@ import (
 	"errors"
 	"io/fs"
 	"os"
-	"runtime"
 	"sort"
 	"strings"
 )
@@ -50,6 +49,11 @@ func (b *lazybuf) append(c byte) {
 	}
 	b.buf[b.w] = c
 	b.w++
+}
+
+func (b *lazybuf) prepend(prefix ...byte) {
+	b.buf = append(prefix, b.buf...)
+	b.w += len(prefix)
 }
 
 func (b *lazybuf) string() string {
@@ -146,18 +150,6 @@ func Clean(path string) string {
 			if rooted && out.w != 1 || !rooted && out.w != 0 {
 				out.append(Separator)
 			}
-			// If a ':' appears in the path element at the start of a Windows path,
-			// insert a .\ at the beginning to avoid converting relative paths
-			// like a/../c: into c:.
-			if runtime.GOOS == "windows" && out.w == 0 && out.volLen == 0 && r != 0 {
-				for i := r; i < n && !os.IsPathSeparator(path[i]); i++ {
-					if path[i] == ':' {
-						out.append('.')
-						out.append(Separator)
-						break
-					}
-				}
-			}
 			// copy element
 			for ; r < n && !os.IsPathSeparator(path[r]); r++ {
 				out.append(path[r])
@@ -170,7 +162,48 @@ func Clean(path string) string {
 		out.append('.')
 	}
 
+	postClean(&out) // avoid creating absolute paths on Windows
 	return FromSlash(out.string())
+}
+
+// IsLocal reports whether path, using lexical analysis only, has all of these properties:
+//
+//   - is within the subtree rooted at the directory in which path is evaluated
+//   - is not an absolute path
+//   - is not empty
+//   - on Windows, is not a reserved name such as "NUL"
+//
+// If IsLocal(path) returns true, then
+// Join(base, path) will always produce a path contained within base and
+// Clean(path) will always produce an unrooted path with no ".." path elements.
+//
+// IsLocal is a purely lexical operation.
+// In particular, it does not account for the effect of any symbolic links
+// that may exist in the filesystem.
+func IsLocal(path string) bool {
+	return isLocal(path)
+}
+
+func unixIsLocal(path string) bool {
+	if IsAbs(path) || path == "" {
+		return false
+	}
+	hasDots := false
+	for p := path; p != ""; {
+		var part string
+		part, p, _ = strings.Cut(p, "/")
+		if part == "." || part == ".." {
+			hasDots = true
+			break
+		}
+	}
+	if hasDots {
+		path = Clean(path)
+	}
+	if path == ".." || strings.HasPrefix(path, "../") {
+		return false
+	}
+	return true
 }
 
 // ToSlash returns the result of replacing each separator character

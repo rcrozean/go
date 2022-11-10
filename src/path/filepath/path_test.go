@@ -7,7 +7,6 @@ package filepath_test
 import (
 	"errors"
 	"fmt"
-	"internal/testenv"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -17,6 +16,8 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"internal/testenv"
 )
 
 type PathTest struct {
@@ -69,6 +70,7 @@ var cleantests = []PathTest{
 	{"/abc/def/../../..", "/"},
 	{"abc/def/../../../ghi/jkl/../../../mno", "../../mno"},
 	{"/../abc", "/abc"},
+	{"a/../b:/../../c", `../c`},
 
 	// Combinations
 	{"abc/./../def", "def"},
@@ -84,6 +86,7 @@ var wincleantests = []PathTest{
 	{`c:\abc\def\..\..`, `c:\`},
 	{`c:\..\abc`, `c:\abc`},
 	{`c:..\abc`, `c:..\abc`},
+	{`c:\b:\..\..\..\d`, `c:\d`},
 	{`\`, `\`},
 	{`/`, `\`},
 	{`\\i\..\c$`, `\c$`},
@@ -103,6 +106,9 @@ var wincleantests = []PathTest{
 	{`a/../c:/a`, `.\c:\a`},
 	{`a/../../c:`, `..\c:`},
 	{`foo:bar`, `foo:bar`},
+
+	// Don't allow cleaning to create a Root Local Device path like \??\a.
+	{`/a/../??/a`, `\.\??\a`},
 }
 
 func TestClean(t *testing.T) {
@@ -134,6 +140,80 @@ func TestClean(t *testing.T) {
 		allocs := testing.AllocsPerRun(100, func() { filepath.Clean(test.result) })
 		if allocs > 0 {
 			t.Errorf("Clean(%q): %v allocs, want zero", test.result, allocs)
+		}
+	}
+}
+
+type IsLocalTest struct {
+	path    string
+	isLocal bool
+}
+
+var islocaltests = []IsLocalTest{
+	{"", false},
+	{".", true},
+	{"..", false},
+	{"../a", false},
+	{"/", false},
+	{"/a", false},
+	{"/a/../..", false},
+	{"a", true},
+	{"a/../a", true},
+	{"a/", true},
+	{"a/.", true},
+	{"a/./b/./c", true},
+	{`a/../b:/../../c`, false},
+}
+
+var winislocaltests = []IsLocalTest{
+	{"NUL", false},
+	{"nul", false},
+	{"nul ", false},
+	{"nul.", false},
+	{"a/nul:", false},
+	{"a/nul : a", false},
+	{"com0", true},
+	{"com1", false},
+	{"com2", false},
+	{"com3", false},
+	{"com4", false},
+	{"com5", false},
+	{"com6", false},
+	{"com7", false},
+	{"com8", false},
+	{"com9", false},
+	{"com¹", false},
+	{"com²", false},
+	{"com³", false},
+	{"com¹ : a", false},
+	{"cOm1", false},
+	{"lpt1", false},
+	{"LPT1", false},
+	{"lpt³", false},
+	{"./nul", false},
+	{"a/nul.txt/b", false},
+	{`\`, false},
+	{`\a`, false},
+	{`C:`, false},
+	{`C:\a`, false},
+	{`..\a`, false},
+}
+
+var plan9islocaltests = []IsLocalTest{
+	{"#a", false},
+}
+
+func TestIsLocal(t *testing.T) {
+	tests := islocaltests
+	if runtime.GOOS == "windows" {
+		tests = append(tests, winislocaltests...)
+	}
+	if runtime.GOOS == "plan9" {
+		tests = append(tests, plan9islocaltests...)
+	}
+	for _, test := range tests {
+		if got := filepath.IsLocal(test.path); got != test.isLocal {
+			t.Errorf("IsLocal(%q) = %v, want %v", test.path, got, test.isLocal)
 		}
 	}
 }
@@ -299,8 +379,11 @@ var winjointests = []JoinTest{
 	{[]string{`\`, `a`, `b`}, `\a\b`},
 	{[]string{`\\`, `a`, `b`}, `\a\b`},
 	{[]string{`\`, `\\a\b`, `c`}, `\a\b\c`},
-	{[]string{`\\a`, `b`, `c`}, `\a\b\c`},
-	{[]string{`\\a\`, `b`, `c`}, `\a\b\c`},
+	{[]string{`\\a`, `b`, `c`}, `\\a\b\c`},
+	{[]string{`\\a\`, `b`, `c`}, `\\a\b\c`},
+	{[]string{`//`, `a`}, `\\a`},
+	{[]string{`a:\b\c`, `x\..\y:\..\..\z`}, `a:\b\z`},
+	{[]string{`\`, `??\a`}, `\.\??\a`},
 }
 
 func TestJoin(t *testing.T) {
@@ -805,6 +888,8 @@ var winisabstests = []IsAbsTest{
 	{`\\host\share\`, true},
 	{`\\host\share\foo`, true},
 	{`//host/share/foo/bar`, true},
+	{`\\?\a\b\c`, true},
+	{`\??\a\b\c`, true},
 }
 
 func TestIsAbs(t *testing.T) {
@@ -1279,7 +1364,8 @@ type VolumeNameTest struct {
 var volumenametests = []VolumeNameTest{
 	{`c:/foo/bar`, `c:`},
 	{`c:`, `c:`},
-	{`2:`, ``},
+	{`c:\`, `c:`},
+	{`2:`, `2:`},
 	{``, ``},
 	{`\\\host`, ``},
 	{`\\\host\`, ``},
@@ -1298,7 +1384,24 @@ var volumenametests = []VolumeNameTest{
 	{`\\host\share\\foo\\\bar\\\\baz`, `\\host\share`},
 	{`//host/share//foo///bar////baz`, `//host/share`},
 	{`\\host\share\foo\..\bar`, `\\host\share`},
-	{`//host/share/foo/../bar`, `//host/share`},
+	{`//host/share/foo/../bar`, `\\host\share`},
+	{`//.`, `\\.`},
+	{`//./`, `\\.\`},
+	{`//./NUL`, `\\.\NUL`},
+	{`//?/`, `\\?`},
+	{`//./a/b`, `\\.\a`},
+	{`//?/`, `\\?`},
+	{`//?/`, `\\?`},
+	{`//./C:`, `\\.\C:`},
+	{`//./C:/`, `\\.\C:`},
+	{`//./C:/a/b/c`, `\\.\C:`},
+	{`//./UNC/host/share/a/b/c`, `\\.\UNC\host\share`},
+	{`//./UNC/host`, `\\.\UNC\host`},
+	{`//./UNC/host\`, `\\.\UNC\host\`},
+	{`//./UNC`, `\\.\UNC`},
+	{`//./UNC/`, `\\.\UNC\`},
+	{`\\?\x`, `\\?`},
+	{`\??\x`, `\??`},
 }
 
 func TestVolumeName(t *testing.T) {
@@ -1569,5 +1672,30 @@ func TestIssue51617(t *testing.T) {
 	want := []string{".", "a", filepath.Join("a", "bad"), filepath.Join("a", "next")}
 	if !reflect.DeepEqual(saw, want) {
 		t.Errorf("got directories %v, want %v", saw, want)
+	}
+}
+
+func TestEscaping(t *testing.T) {
+	dir1 := t.TempDir()
+	dir2 := t.TempDir()
+	chdir(t, dir1)
+
+	for _, p := range []string{
+		filepath.Join(dir2, "x"),
+	} {
+		if !filepath.IsLocal(p) {
+			continue
+		}
+		f, err := os.Create(p)
+		if err != nil {
+			f.Close()
+		}
+		ents, err := os.ReadDir(dir2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range ents {
+			t.Fatalf("found: %v", e.Name())
+		}
 	}
 }

@@ -99,6 +99,11 @@ var wincleantests = []PathTest{
 	{`.\c:`, `.\c:`},
 	{`.\c:\foo`, `.\c:\foo`},
 	{`.\c:foo`, `.\c:foo`},
+	{`//abc`, `\\abc`},
+	{`///abc`, `\\\abc`},
+	{`//abc//`, `\\abc\\`},
+	{`\\?\C:\`, `\\?\C:\`},
+	{`\\?\C:\a`, `\\?\C:\a`},
 
 	// Don't allow cleaning to move an element with a colon to the start of the path.
 	{`a/../c:`, `.\c:`},
@@ -1388,10 +1393,13 @@ var volumenametests = []VolumeNameTest{
 	{`//.`, `\\.`},
 	{`//./`, `\\.\`},
 	{`//./NUL`, `\\.\NUL`},
-	{`//?/`, `\\?`},
+	{`//?`, `\\?`},
+	{`//?/`, `\\?\`},
+	{`//?/NUL`, `\\?\NUL`},
+	{`/??`, `\??`},
+	{`/??/`, `\??\`},
+	{`/??/NUL`, `\??\NUL`},
 	{`//./a/b`, `\\.\a`},
-	{`//?/`, `\\?`},
-	{`//?/`, `\\?`},
 	{`//./C:`, `\\.\C:`},
 	{`//./C:/`, `\\.\C:`},
 	{`//./C:/a/b/c`, `\\.\C:`},
@@ -1400,8 +1408,8 @@ var volumenametests = []VolumeNameTest{
 	{`//./UNC/host\`, `\\.\UNC\host\`},
 	{`//./UNC`, `\\.\UNC`},
 	{`//./UNC/`, `\\.\UNC\`},
-	{`\\?\x`, `\\?`},
-	{`\??\x`, `\??`},
+	{`\\?\x`, `\\?\x`},
+	{`\??\x`, `\??\x`},
 }
 
 func TestVolumeName(t *testing.T) {
